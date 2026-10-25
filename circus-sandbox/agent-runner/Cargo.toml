@@ -1,0 +1,21 @@
+[package]
+name = "circus-agent-runner"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99.1"
+license = "Apache-2.0"
+description = "Single-task agent caller for Circus sandbox with events, cancellation, and owned cleanup."
+
+[dependencies]
+circus-sandbox = { path = "..", version = "0.1.0" }
+serde = { version = "1", features = ["derive"] }
+sonic-rs = "0.5"
+tempfile.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time", "io-util", "process"] }
+tokio-util = { workspace = true, features = ["rt"] }
+url.workspace = true
+uuid = { workspace = true, features = ["v4", "std"] }
+
+[lints.rust]
+unsafe_code = "forbid"

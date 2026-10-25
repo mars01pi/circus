@@ -1,0 +1,27 @@
+[package]
+name = "circus-sandbox-exec"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99.1"
+license = "Apache-2.0"
+description = "Standalone stdio proxy that runs one provider command in an owned Circus sandbox and restores its workspace from a bounded archive."
+
+[features]
+default = []
+containerd = ["circus-sandbox/containerd"]
+kubernetes = ["circus-sandbox/kubernetes"]
+
+[dependencies]
+circus-sandbox = { path = "..", version = "0.1.0", default-features = false }
+serde = { version = "1", features = ["derive"] }
+sonic-rs = "0.5"
+tempfile.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time", "signal"] }
+tokio-util = { workspace = true, features = ["rt"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+
+[lints.rust]
+unsafe_code = "forbid"

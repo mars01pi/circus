@@ -1,0 +1,1158 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "circus-sandbox HTTP API",
+    "version": "0.1.0",
+    "description": "Authenticated JSON transport over the in-process circus-sandbox API. Every route requires a bearer token and an allowed tenant. Error bodies are the stable code/message pair, never backend text. GET /healthz reports process liveness only; it does not contact Docker and is not a readiness signal."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Same origin as the configured listener."
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "healthz",
+        "summary": "Process liveness",
+        "description": "Returns ok when this HTTP process can answer requests. It does not check Docker, images, sandboxes, or tenant capacity.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Tenant"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The HTTP process is answering.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/v1/sandboxes": {
+      "post": {
+        "operationId": "createSandbox",
+        "summary": "Create a sandbox",
+        "description": "Creates the sandbox through Sandbox::create using the supplied backend and sandbox configuration. The backend must be docker with the runc runtime; other backends and runtimes are rejected with 501.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Tenant"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSandboxRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Sandbox created. The id is opaque and tenant-scoped.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Sandbox"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "413": {
+            "$ref": "#/components/responses/LimitExceeded"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "501": {
+            "$ref": "#/components/responses/UnsupportedBackend"
+          },
+          "503": {
+            "$ref": "#/components/responses/BackendUnavailable"
+          }
+        }
+      }
+    },
+    "/v1/sandboxes/{id}": {
+      "get": {
+        "operationId": "getSandbox",
+        "summary": "Inspect sandbox phase",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Tenant"
+          },
+          {
+            "$ref": "#/components/parameters/SandboxId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current phase and inspected enforcement evidence. Requested limits are never substituted for evidence.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Sandbox"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/BackendUnavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/Timeout"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteSandbox",
+        "summary": "Destroy a sandbox",
+        "description": "Force-removes the owned container and staging. The handler has no caller deadline and dropping the request does not relinquish ownership. Success requires confirmed absence; otherwise the response is 500 cleanup_required and the handle stays registered for retry.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Tenant"
+          },
+          {
+            "$ref": "#/components/parameters/SandboxId"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Cleanup confirmed."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/BackendUnavailable"
+          }
+        }
+      }
+    },
+    "/v1/sandboxes/{id}/start": {
+      "post": {
+        "operationId": "startSandbox",
+        "summary": "Start a created sandbox",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Tenant"
+          },
+          {
+            "$ref": "#/components/parameters/SandboxId"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Sandbox is running."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/LimitExceeded"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/BackendUnavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/Timeout"
+          }
+        }
+      }
+    },
+    "/v1/sandboxes/{id}/pause": {
+      "post": {
+        "operationId": "pauseSandbox",
+        "summary": "Pause a running sandbox",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Tenant"
+          },
+          {
+            "$ref": "#/components/parameters/SandboxId"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Sandbox is paused."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/BackendUnavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/Timeout"
+          }
+        }
+      }
+    },
+    "/v1/sandboxes/{id}/resume": {
+      "post": {
+        "operationId": "resumeSandbox",
+        "summary": "Resume a paused sandbox",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Tenant"
+          },
+          {
+            "$ref": "#/components/parameters/SandboxId"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Sandbox is running."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/BackendUnavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/Timeout"
+          }
+        }
+      }
+    },
+    "/v1/sandboxes/{id}/exec": {
+      "post": {
+        "operationId": "execSandbox",
+        "summary": "Run one command",
+        "description": "Runs argv as separate arguments. stdout and stderr share the request output budget. A non-zero exit code is still 200.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Tenant"
+          },
+          {
+            "$ref": "#/components/parameters/SandboxId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Finished command, including non-zero exits.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/LimitExceeded"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/BackendUnavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/Timeout"
+          }
+        }
+      }
+    },
+    "/v1/sandboxes/{id}/files/{path}": {
+      "get": {
+        "operationId": "readSandboxFile",
+        "summary": "Read one workspace file",
+        "description": "Reads host staging in the created phase or the guest workspace while running. The path is workspace-relative and may contain slashes.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Tenant"
+          },
+          {
+            "$ref": "#/components/parameters/SandboxId"
+          },
+          {
+            "$ref": "#/components/parameters/FilePath"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File bytes.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/LimitExceeded"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/BackendUnavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/Timeout"
+          }
+        }
+      },
+      "put": {
+        "operationId": "writeSandboxFile",
+        "summary": "Write one workspace file",
+        "description": "Writes the raw request body as the file contents. The service body limit and the sandbox per-file limit both apply.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Tenant"
+          },
+          {
+            "$ref": "#/components/parameters/SandboxId"
+          },
+          {
+            "$ref": "#/components/parameters/FilePath"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "File written."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/LimitExceeded"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/BackendUnavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/Timeout"
+          }
+        }
+      }
+    },
+    "/v1/sandboxes/{id}/snapshots": {
+      "post": {
+        "operationId": "captureSandboxSnapshot",
+        "summary": "Capture workspace files",
+        "description": "Captures regular workspace files and directories into an in-process snapshot. Not a process, memory, container, or VM checkpoint. The service retains the snapshot under an opaque id scoped to the caller tenant.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Tenant"
+          },
+          {
+            "$ref": "#/components/parameters/SandboxId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaptureSnapshotRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Snapshot captured and retained.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Snapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/LimitExceeded"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/BackendUnavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/Timeout"
+          }
+        }
+      }
+    },
+    "/v1/sandboxes/{id}/snapshots/{snapshot_id}/restore": {
+      "post": {
+        "operationId": "restoreSandboxSnapshot",
+        "summary": "Restore a captured snapshot",
+        "description": "Replaces created-phase host staging with the retained snapshot. Running, paused, destroyed, and cleanup-required sandboxes reject the operation with 409.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Tenant"
+          },
+          {
+            "$ref": "#/components/parameters/SandboxId"
+          },
+          {
+            "name": "snapshot_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Staging replaced."
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "$ref": "#/components/responses/BackendUnavailable"
+          },
+          "504": {
+            "$ref": "#/components/responses/Timeout"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Explicit non-empty bearer token supplied to HttpConfig::new. Compared without an early exit on the first differing byte."
+      }
+    },
+    "parameters": {
+      "Tenant": {
+        "name": "X-Circus-Tenant",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Tenant from the explicit allow-list. Missing or unknown tenants receive 403 after token validation."
+      },
+      "SandboxId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Opaque sandbox identifier issued by this service. Lookups are tenant-scoped."
+      },
+      "FilePath": {
+        "name": "path",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Workspace-relative slash path. Empty, absolute, parent, drive-prefixed, and backslash paths are rejected with 400."
+      }
+    },
+    "responses": {
+      "InvalidRequest": {
+        "description": "Malformed JSON, invalid configuration, rejected path, or invalid command request.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Missing or wrong bearer token.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "Missing or disallowed tenant.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Unknown path, sandbox, snapshot, or file; includes cross-tenant identifiers.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "The sandbox phase does not allow the operation, or a process is already active.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "LimitExceeded": {
+        "description": "Body, file, output, staging, snapshot, or retention limit exceeded.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Timeout": {
+        "description": "A configured lifecycle, command, file, or status deadline fired.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "ServerError": {
+        "description": "Cleanup could not be confirmed, or the request could not be completed.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "UnsupportedBackend": {
+        "description": "The requested backend kind, runtime, or capability is not implemented.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "BackendUnavailable": {
+        "description": "The selected local backend, image, or worker is unavailable.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "invalid_request",
+              "unauthorized",
+              "forbidden",
+              "not_found",
+              "method_not_allowed",
+              "conflict",
+              "limit_exceeded",
+              "cancelled",
+              "timeout",
+              "cleanup_required",
+              "backend_unavailable",
+              "unsupported_backend",
+              "internal_error"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "Fixed, non-sensitive description for the code."
+          }
+        }
+      },
+      "Health": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "const": "ok"
+          }
+        }
+      },
+      "CreateSandboxRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "backend",
+          "sandbox"
+        ],
+        "properties": {
+          "backend": {
+            "$ref": "#/components/schemas/BackendConfig"
+          },
+          "sandbox": {
+            "$ref": "#/components/schemas/SandboxConfig"
+          }
+        }
+      },
+      "BackendConfig": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "endpoint",
+          "image",
+          "runtime"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "docker"
+            ]
+          },
+          "endpoint": {
+            "type": "string",
+            "description": "Authorized local Unix socket or Windows named pipe."
+          },
+          "image": {
+            "type": "string",
+            "description": "Image that already exists locally; never pulled."
+          },
+          "runtime": {
+            "type": "string",
+            "enum": [
+              "runc"
+            ]
+          }
+        }
+      },
+      "SandboxConfig": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "memory_bytes",
+          "cpu_millis",
+          "pids",
+          "workspace_bytes",
+          "max_file_bytes",
+          "isolation",
+          "io"
+        ],
+        "properties": {
+          "memory_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9223372036854775807
+          },
+          "cpu_millis": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Thousandths of one CPU; 1000 is one CPU."
+          },
+          "pids": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "workspace_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9223372036854775807,
+            "description": "Must not exceed memory_bytes."
+          },
+          "max_file_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Must not exceed workspace_bytes."
+          },
+          "isolation": {
+            "$ref": "#/components/schemas/IsolationConfig"
+          },
+          "io": {
+            "$ref": "#/components/schemas/IoLimits"
+          }
+        }
+      },
+      "IsolationConfig": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "workspace_path",
+          "guest_uid",
+          "guest_gid"
+        ],
+        "properties": {
+          "workspace_path": {
+            "type": "string",
+            "description": "Absolute guest path. Isolation flags are always enforced: no-new-privileges, all capabilities dropped, read-only root, and disabled network."
+          },
+          "guest_uid": {
+            "type": "integer",
+            "format": "uint32"
+          },
+          "guest_gid": {
+            "type": "integer",
+            "format": "uint32"
+          }
+        }
+      },
+      "IoLimits": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "output_limit_bytes",
+          "command_timeout_ms",
+          "file_timeout_ms",
+          "lifecycle_timeout_ms"
+        ],
+        "properties": {
+          "output_limit_bytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "command_timeout_ms": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 86400000
+          },
+          "file_timeout_ms": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 86400000
+          },
+          "lifecycle_timeout_ms": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 86400000
+          }
+        }
+      },
+      "Sandbox": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "phase",
+          "enforcement"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "created",
+              "running",
+              "paused",
+              "destroyed",
+              "cleanup_required"
+            ]
+          },
+          "enforcement": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Enforcement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "Enforcement": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "runtime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "memory_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "nano_cpus": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "pids_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "readonly_root": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "network_mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cap_drop": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "security_opt": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "bind_count": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "tmpfs_workspace": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ExecRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "argv",
+          "timeout_ms",
+          "output_limit_bytes"
+        ],
+        "properties": {
+          "argv": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "Separate arguments; not a shell string."
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 86400000
+          },
+          "output_limit_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Shared stdout+stderr bound. Must not exceed the sandbox configuration's output_limit_bytes."
+          }
+        }
+      },
+      "ExecResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "exit_code",
+          "stdout_base64",
+          "stderr_base64"
+        ],
+        "properties": {
+          "exit_code": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "stdout_base64": {
+            "type": "string",
+            "contentEncoding": "base64"
+          },
+          "stderr_base64": {
+            "type": "string",
+            "contentEncoding": "base64"
+          }
+        }
+      },
+      "CaptureSnapshotRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "max_total_bytes",
+          "max_entries",
+          "max_archive_bytes"
+        ],
+        "properties": {
+          "max_total_bytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "max_entries": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "max_archive_bytes": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "Snapshot": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "snapshot_id",
+          "entries",
+          "total_bytes"
+        ],
+        "properties": {
+          "snapshot_id": {
+            "type": "string"
+          },
+          "entries": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "total_bytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  }
+}

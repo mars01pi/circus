@@ -1,0 +1,248 @@
+name: Sandbox Docker
+
+# Real Docker Engine evidence for the opt-in sandbox integration suites.
+# The Docker Engine is part of GitHub's ubuntu-latest image, so this workflow
+# needs no local Docker installation and no service container. It complements
+# `Sandbox Rust`, which only compiles and runs non-ignored tests: absence,
+# cancellation, or failure of this workflow is never a green claim about
+# container isolation.
+#
+# No path filters: circus-sandbox is the whole crate, and a skipped workflow
+# stays pending when a ruleset requires the check.
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: sandbox-docker-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # The suites assert this opt-in explicitly; they never connect to an engine
+  # without it.
+  CIRCUS_DOCKER_SANDBOX: "1"
+  CIRCUS_DOCKER_ENDPOINT: unix:///var/run/docker.sock
+  CIRCUS_DOCKER_IMAGE: python:3.12-slim
+  # ubuntu-latest is linux/amd64; the image suites require the explicit name.
+  CIRCUS_DOCKER_ARCH: amd64
+
+jobs:
+  # One matrix entry per real-engine binary. fail-fast stays false so a failure
+  # in one suite never hides the other suites' verdicts. Each entry runs on a
+  # fresh runner, so its containers cannot leak into a sibling suite.
+  docker:
+    name: docker (${{ matrix.suite }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - docker_sandbox
+          - docker_snapshot
+          - docker_pool
+          - docker_hardening
+          - docker_staging
+          - docker_environment
+          - docker_environment_prep
+          - docker_process
+    defaults:
+      run:
+        working-directory: circus-sandbox
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust 1.99.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+            https://sh.rustup.rs -o "$RUNNER_TEMP/rustup-init.sh"
+          sh "$RUNNER_TEMP/rustup-init.sh" -y \
+            --default-toolchain 1.99.1 \
+            --profile minimal \
+            --component rustfmt,clippy
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Require Rust 1.99.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="$(rustc --version)"
+          printf '%s\n' "$ver"
+          cargo --version
+          case "$ver" in
+            *" 1.99.1 "*) ;;
+            *) echo "expected rustc 1.99.1, got: $ver" >&2; exit 1 ;;
+          esac
+
+      - name: Pull test image
+        shell: bash
+        run: docker pull python:3.12-slim
+
+      # Record what the suites actually ran against before any test starts.
+      - name: Print engine version and image digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker version
+          printf 'engine=%s\n' "$(docker version --format '{{.Server.Version}}')"
+          docker image inspect --format \
+            'image={{.Id}} digests={{json .RepoDigests}}' python:3.12-slim
+
+      - name: Run ignored ${{ matrix.suite }} suite
+        shell: bash
+        run: cargo test --locked --test "${{ matrix.suite }}" -- --ignored
+
+  # Default suite plus the Docker ignored binaries that share CIRCUS_DOCKER_*.
+  # Display/report only: no percentage gate. Not isolation evidence. Excludes
+  # agent_image (custom image) and docker_image_pull (network pull opt-in), and
+  # never enables containerd/kubernetes features.
+  #
+  # Manual only: the eight docker(*) matrix jobs already provide per-suite
+  # Engine evidence on every PR; this merged llvm-cov report is expensive and
+  # is not needed on every PR or main push.
+  coverage-docker:
+    name: coverage-docker
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: circus-sandbox
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust 1.99.1 with llvm-tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+            https://sh.rustup.rs -o "$RUNNER_TEMP/rustup-init.sh"
+          sh "$RUNNER_TEMP/rustup-init.sh" -y \
+            --default-toolchain 1.99.1 \
+            --profile minimal \
+            --component llvm-tools-preview
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Require Rust 1.99.1
+        id: rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="$(rustc --version)"
+          printf '%s\n' "$ver"
+          case "$ver" in
+            *" 1.99.1 "*) ;;
+            *) echo "expected rustc 1.99.1, got: $ver" >&2; exit 1 ;;
+          esac
+          comps="$(rustup component list --installed)"
+          case "$comps" in
+            *llvm-tools*) ;;
+            *) echo "llvm-tools-preview is not installed" >&2; exit 1 ;;
+          esac
+
+      - name: Install cargo-llvm-cov 0.6.17
+        id: llvm_cov
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo install --locked --version 0.6.17 cargo-llvm-cov
+          ver="$(cargo llvm-cov --version)"
+          printf '%s\n' "$ver"
+          case "$ver" in
+            *"cargo-llvm-cov 0.6.17"*) ;;
+            *) echo "expected cargo-llvm-cov 0.6.17, got: $ver" >&2; exit 1 ;;
+          esac
+
+      - name: Pull test image
+        if: ${{ !cancelled() && steps.llvm_cov.outcome == 'success' }}
+        shell: bash
+        run: docker pull python:3.12-slim
+
+      - name: Print engine version and image digest
+        if: ${{ !cancelled() && steps.llvm_cov.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker version
+          printf 'engine=%s\n' "$(docker version --format '{{.Server.Version}}')"
+          docker image inspect --format \
+            'image={{.Id}} digests={{json .RepoDigests}}' python:3.12-slim
+
+      - name: Measure default suite plus Docker ignored coverage
+        id: coverage
+        if: ${{ !cancelled() && steps.llvm_cov.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Merge recipe for cargo-llvm-cov 0.6.17: --no-report retains
+          # artifacts (do not pass --no-clean with --no-report; that errors).
+          cargo llvm-cov clean --workspace
+          # Non-ignored default suite first.
+          cargo llvm-cov --locked --package circus-sandbox --no-report
+          # Docker ignored binaries that use the workflow CIRCUS_DOCKER_* env.
+          for suite in \
+            docker_sandbox \
+            docker_snapshot \
+            docker_pool \
+            docker_hardening \
+            docker_staging \
+            docker_environment \
+            docker_environment_prep \
+            docker_process \
+            docker_http_api
+          do
+            cargo llvm-cov --locked --package circus-sandbox --no-report \
+              --test "$suite" -- --ignored
+          done
+          cargo llvm-cov report --lcov \
+            --output-path "$RUNNER_TEMP/circus-sandbox-lcov-docker.info" \
+            | tee "$RUNNER_TEMP/circus-sandbox-coverage-docker.txt"
+          {
+            echo "## circus-sandbox coverage (default + Docker ignored)"
+            echo
+            echo "Includes the default \`cargo test\` suite and the Docker ignored binaries listed in this job."
+            echo "Excludes \`agent_image\`, \`docker_image_pull\`, and containerd/Kubernetes features."
+            echo "No coverage percentage gate; this job is display and artifact only."
+            echo "Not isolation evidence."
+            echo
+            echo '```'
+            tail -n 30 "$RUNNER_TEMP/circus-sandbox-coverage-docker.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload lcov artifact
+        if: ${{ !cancelled() && steps.coverage.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: circus-sandbox-lcov-docker
+          path: ${{ runner.temp }}/circus-sandbox-lcov-docker.info
+          if-no-files-found: error
+
+      - name: Publish Docker coverage badge
+        if: ${{ !cancelled() && steps.coverage.outcome == 'success' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/scripts/sandbox-publish-coverage-badge.sh \
+            "${RUNNER_TEMP}/circus-sandbox-lcov-docker.info" \
+            coverage-docker.json \
+            coverage+docker

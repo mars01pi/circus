@@ -1,3 +1,5 @@
+mod code_source;
+mod git;
 mod snapshot;
 
 use std::io::{self, Read, Write};
@@ -267,6 +269,42 @@ impl Workspace {
         read_regular(file, path, self.max_file_bytes)
     }
 
+    /// Opens one staged regular file for caller-driven, bounded streaming.
+    ///
+    /// Returns the length observed on the opened handle and a host file
+    /// handle. The handle inherits the same cap-std resolution as
+    /// [`Self::read_file`]: the path is checked first, the directory capability
+    /// opens it, and the opened handle must be a regular file. The caller reads
+    /// at most the returned length in chunks, so no full-file buffer is needed.
+    /// The file lock protects lookup and open; an open handle remains pinned to
+    /// the inode it resolved, but concurrent external replacement is still
+    /// possible, exactly as with `read_file`.
+    ///
+    /// Blocks the calling thread.
+    pub(crate) fn open_staged_file(
+        &self,
+        path: impl AsRef<Path>,
+    ) -> Result<(u64, std::fs::File), WorkspaceError> {
+        self.ensure_open()?;
+        let path = check_path(path.as_ref())?;
+        let _guard = self.file_lock.read().map_err(lock_poisoned)?;
+        let dir = self.dir.as_ref().ok_or_else(missing_handle)?;
+        require_readable_node(dir, path)?;
+        let file = open_readable(dir, path)?;
+        let meta = file.metadata()?;
+        if !meta.is_file() {
+            return Err(not_regular(path));
+        }
+        let limit = u64::try_from(self.max_file_bytes).unwrap_or(u64::MAX);
+        if meta.len() > limit {
+            return Err(WorkspaceError::LimitExceeded {
+                limit: self.max_file_bytes,
+                actual: self.max_file_bytes.saturating_add(1),
+            });
+        }
+        Ok((meta.len(), file.into_std()))
+    }
+
     /// Removes a non-directory node at `path` via cap-std unlink. A symlink is
     /// removed itself and is not followed. Directories are left in place.
     ///
@@ -283,8 +321,10 @@ impl Workspace {
 
     /// Lists regular files and directories for container staging.
     ///
-    /// Uses this value's capability handle. Symlinks and other non-regular
-    /// nodes are errors. Does not return the host root path.
+    /// Each regular file carries its metadata length; payload bytes are not
+    /// read. The walk returns parent directories before their children. Uses
+    /// this value's capability handle. Symlinks and other non-regular nodes are
+    /// errors. Does not return the host root path.
     pub(crate) fn staged_nodes(&self) -> Result<Vec<StagedNode>, WorkspaceError> {
         self.ensure_open()?;
         let _guard = self.file_lock.read().map_err(lock_poisoned)?;
@@ -332,7 +372,7 @@ impl Workspace {
         }
     }
 
-    fn ensure_open(&self) -> Result<(), WorkspaceError> {
+    pub(crate) fn ensure_open(&self) -> Result<(), WorkspaceError> {
         if self.temp.is_none() {
             return Err(WorkspaceError::Closed);
         }
@@ -373,10 +413,15 @@ impl Workspace {
 }
 
 /// One relative node discovered through the workspace capability handle.
+///
+/// `len` is the file length observed from metadata during the same walk that
+/// discovered the entry. It is a planning value, not a payload copy: the bytes
+/// are streamed later through [`Workspace::open_staged_file`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StagedNode {
     pub relative: String,
     pub is_dir: bool,
+    pub len: u64,
 }
 
 fn walk_staged(dir: &Dir, prefix: &str, out: &mut Vec<StagedNode>) -> Result<(), WorkspaceError> {
@@ -402,13 +447,16 @@ fn walk_staged(dir: &Dir, prefix: &str, out: &mut Vec<StagedNode>) -> Result<(),
             out.push(StagedNode {
                 relative: relative.clone(),
                 is_dir: true,
+                len: 0,
             });
             let child = dir.open_dir(name)?;
             walk_staged(&child, &relative, out)?;
         } else if file_type.is_file() {
+            let len = entry.metadata()?.len();
             out.push(StagedNode {
                 relative,
                 is_dir: false,
+                len,
             });
         } else {
             return Err(io::Error::other("workspace entry is not a regular file").into());
@@ -574,7 +622,19 @@ fn write_regular(mut file: File, path: &Path, contents: &[u8]) -> Result<(), Wor
     Ok(())
 }
 
-fn read_regular(mut file: File, path: &Path, limit: usize) -> Result<Vec<u8>, WorkspaceError> {
+fn read_regular(file: File, path: &Path, limit: usize) -> Result<Vec<u8>, WorkspaceError> {
+    let mut buf = Vec::new();
+    read_regular_into(file, path, limit, &mut buf)?;
+    Ok(buf)
+}
+
+fn read_regular_into(
+    mut file: File,
+    path: &Path,
+    limit: usize,
+    buf: &mut Vec<u8>,
+) -> Result<(), WorkspaceError> {
+    buf.clear();
     let meta = file.metadata()?;
     if !meta.is_file() {
         return Err(not_regular(path));
@@ -584,7 +644,6 @@ fn read_regular(mut file: File, path: &Path, limit: usize) -> Result<Vec<u8>, Wo
             max_file_bytes: limit,
         });
     };
-    let mut buf = Vec::new();
     let mut chunk = [0u8; 8 * 1024];
     while buf.len() < probe {
         let want = (probe - buf.len()).min(chunk.len());
@@ -602,13 +661,20 @@ fn read_regular(mut file: File, path: &Path, limit: usize) -> Result<Vec<u8>, Wo
             actual: buf.len(),
         });
     }
-    Ok(buf)
+    Ok(())
 }
 
+#[cfg(test)]
+mod snapshot_file_tests;
 #[cfg(test)]
 mod snapshot_tests;
 
 #[doc(inline)]
+pub use code_source::{CodeCopyError, CodeSource};
+#[doc(inline)]
+pub use git::{GitCheckout, GitCleanup, GitError, GitOptions, GitRevision, GitSource, GitWorktree};
+#[doc(inline)]
 pub use snapshot::{CodeSnapshot, SnapshotBudget, SnapshotError};
+pub(crate) use snapshot::{SnapshotBody, SnapshotEntry};
 #[cfg(test)]
 mod tests;

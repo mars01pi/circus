@@ -4,19 +4,76 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.99.1"
 license = "Apache-2.0"
-description = "Linux Docker sandbox with capability-scoped workspace staging. Not Kubernetes, HTTP, or a snapshot service."
+description = "Backend-neutral sandbox API with local Linux Docker + runc, containerd + runc, and Kubernetes workload backends, capability-scoped workspace, workspace file snapshots, prestarted pool leases, image resolution, and an optional authenticated HTTP service. Not a process/memory checkpoint or pause/resume provider."
+
+[features]
+default = ["http"]
+# Builds the containerd gRPC backend. Requires a `protoc` binary at build time.
+containerd = ["dep:containerd-client"]
+# Builds the Kubernetes workload backend. Credentials come only from the
+# explicitly configured kubeconfig, never from ambient KUBECONFIG/$HOME.
+kubernetes = ["dep:k8s-openapi", "dep:kube"]
+http = [
+    "dep:axum",
+    "dep:base64",
+    "dep:serde",
+    "tokio/net",
+]
 
 [dependencies]
+axum = { version = "0.8", optional = true, default-features = false, features = ["http1", "json", "tokio"] }
+base64 = { version = "0.22", optional = true }
 bollard = { version = "0.21.1", default-features = false, features = ["pipe"] }
+containerd-client = { version = "0.9", default-features = false, features = ["connect"], optional = true }
+prost-types = { version = "0.14", default-features = false, features = ["std"] }
 cap-std = { version = "=4.0.3", default-features = false }
 cap-fs-ext = { version = "=4.0.3", default-features = false }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
+k8s-openapi = { version = "0.28.0", default-features = false, features = ["std", "v1_36"], optional = true }
+kube = { version = "4.2.0", default-features = false, features = ["client", "config", "ring", "rustls-tls", "ws"], optional = true }
+serde = { version = "1", optional = true, features = ["derive"] }
+serde_json = "1"
+sha2 = { version = "0.10", default-features = false }
+tempfile.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "sync", "time", "io-util", "process", "signal", "fs"] }
+tokio-util = { workspace = true, features = ["rt"] }
+tracing = { version = "0.1", default-features = false, features = ["std"] }
+uuid = { workspace = true, features = ["v4", "std"] }
+process-wrap = { version = "=10.0.1", default-features = false, features = ["tokio1", "process-group", "job-object", "kill-on-drop"] }
+url.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.1", default-features = false, features = ["std", "process"] }
+
+[dev-dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+tokio = { workspace = true, features = ["process"] }
+
+[target.'cfg(unix)'.dev-dependencies]
+tonic = { version = "0.14", default-features = false, features = ["server"] }
+tonic-prost = { version = "0.14", default-features = false }
+
+[[example]]
+name = "http_api"
+required-features = ["http"]
+
+[[example]]
+name = "containerd_image_environment"
+required-features = ["containerd"]
+
+[workspace]
+members = ["agent-runner", "sandbox-exec", "stdio-bridge"]
+default-members = [".", "agent-runner", "sandbox-exec", "stdio-bridge"]
+resolver = "3"
+
+[workspace.dependencies]
 tempfile = "3.27.0"
 thiserror = "2.0.21"
-tokio = { version = "1.47", default-features = false, features = ["macros", "rt", "rt-multi-thread", "sync", "time", "io-util"] }
-tokio-util = { version = "0.7", default-features = false, features = ["rt"] }
-uuid = { version = "1", default-features = false, features = ["v4", "std"] }
-
+tokio = { version = "1.47", default-features = false }
+tokio-util = { version = "0.7", default-features = false }
+url = "2.5"
+uuid = { version = "1", default-features = false }
 
 [lints.rust]
 unsafe_code = "forbid"

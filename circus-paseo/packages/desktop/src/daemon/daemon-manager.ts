@@ -53,6 +53,10 @@ import {
   readLegacySkillSelection,
 } from "../integrations/legacy-skill-selection.js";
 import { tailFile } from "../diagnostics/tail-file.js";
+import {
+  createSandboxSetupCommandHandlers,
+  requireTrustedSetupSender,
+} from "../features/sandbox/ipc.js";
 
 const DAEMON_LOG_FILENAME = "daemon.log";
 let ownedLaunch: { home: string; instance: DaemonInstance } | null = null;
@@ -475,16 +479,14 @@ export function createDaemonCommandHandlers(): Record<string, DesktopCommandHand
 }
 
 export function registerDaemonManager(): void {
-  const handlers = createDaemonCommandHandlers();
+  const handlers = { ...createDaemonCommandHandlers(), ...createSandboxSetupCommandHandlers() };
 
-  ipcMain.handle(
-    "paseo:invoke",
-    async (_event, command: string, args?: Record<string, unknown>) => {
-      const handler = handlers[command];
-      if (!handler) {
-        throw new Error(`Unknown desktop command: ${command}`);
-      }
-      return await handler(args);
-    },
-  );
+  ipcMain.handle("paseo:invoke", async (event, command: string, args?: Record<string, unknown>) => {
+    if (command.startsWith("sandbox_setup_")) requireTrustedSetupSender(event);
+    const handler = handlers[command];
+    if (!handler) {
+      throw new Error(`Unknown desktop command: ${command}`);
+    }
+    return await handler(args);
+  });
 }

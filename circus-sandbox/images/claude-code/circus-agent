@@ -1,0 +1,16 @@
+#!/bin/sh
+# Invoke explicitly from ProcessRequest: the sandbox backend replaces image ENTRYPOINT.
+set -eu
+umask 077
+
+if [ "$#" -eq 0 ]; then
+    printf '%s\n' 'usage: circus-agent COMMAND [ARG ...]' >&2
+    exit 64
+fi
+
+# The runtime mounts a fresh tmpfs over /workspace, hiding build-time directories.
+mkdir -p "$HOME" "$CLAUDE_CONFIG_DIR" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" \
+    "$XDG_DATA_HOME" "$XDG_STATE_HOME" "$TMPDIR" "$NPM_CONFIG_CACHE" /workspace/project
+
+# Keep argv and standard streams intact; no shell command string or daemon.
+exec "$@"

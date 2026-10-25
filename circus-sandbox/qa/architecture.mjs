@@ -14,14 +14,39 @@ export const EXPECTED_TOOL_VERSION = "0.28.0";
 export const FACADE = "facade";
 export const ALLOWED_DEPENDENCIES = Object.freeze({
   error: [],
+  observability: [],
   runtime: ["error"],
-  infrastructure: ["runtime", "error"],
+  infrastructure: ["runtime", "error", "observability"],
   environment: ["infrastructure", "runtime", "error"],
   workspace: ["infrastructure", "runtime", "error"],
-  lifecycle: ["environment", "workspace", "infrastructure", "runtime", "error"],
-  pool: ["lifecycle", "environment", "workspace", "runtime", "error"],
-  api: ["pool", "lifecycle", "environment", "workspace", "runtime", "error"],
+  lifecycle: [
+    "environment",
+    "workspace",
+    "infrastructure",
+    "runtime",
+    "error",
+    "observability",
+  ],
+  pool: [
+    "lifecycle",
+    "environment",
+    "workspace",
+    "runtime",
+    "error",
+    "observability",
+  ],
+  http: ["api", "lifecycle", "workspace", "runtime", "error"],
+  api: [
+    "pool",
+    "lifecycle",
+    "environment",
+    "workspace",
+    "runtime",
+    "error",
+    "observability",
+  ],
   facade: [
+    "http",
     "api",
     "pool",
     "lifecycle",
@@ -29,6 +54,7 @@ export const ALLOWED_DEPENDENCIES = Object.freeze({
     "workspace",
     "runtime",
     "error",
+    "observability",
   ],
 });
 
@@ -274,6 +300,8 @@ export function checkArchitecture({ cwd = sandboxDir } = {}) {
     [
       "modules",
       "dependencies",
+      "--package",
+      "circus-sandbox",
       "--lib",
       "--all-features",
       "--no-externs",

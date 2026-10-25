@@ -97,7 +97,7 @@ jobs:
       # failure does not hide the next; nothing here forces success.
       - name: Check formatting
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
-        run: cargo fmt --check
+        run: cargo fmt --all --check
 
       - name: Clippy
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
@@ -116,6 +116,10 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --locked --no-deps
+
+      - name: Check Codex model bridge policy and HTTPS transport
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' && runner.os == 'Linux' }}
+        run: python3 -B -m unittest discover -s agent-runner/tests -p 'test_*.py' -v
 
       - name: Run example
         if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
@@ -179,7 +183,112 @@ jobs:
       - name: Check advisories, licenses, bans, and sources
         if: ${{ !cancelled() && steps.deny.outcome == 'success' }}
         shell: bash
-        run: cargo deny --locked check
+        run: cargo deny --workspace --locked check
+
+  # Line coverage for the default (non-ignored) circus-sandbox suite only.
+  # Display/report only: no percentage gate. Ignored Docker/containerd/K8s
+  # integration tests are not included and are not isolation evidence.
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: circus-sandbox
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust 1.99.1 with llvm-tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+            https://sh.rustup.rs -o "$RUNNER_TEMP/rustup-init.sh"
+          sh "$RUNNER_TEMP/rustup-init.sh" -y \
+            --default-toolchain 1.99.1 \
+            --profile minimal \
+            --component llvm-tools-preview
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Require Rust 1.99.1
+        id: rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="$(rustc --version)"
+          printf '%s\n' "$ver"
+          case "$ver" in
+            *" 1.99.1 "*) ;;
+            *) echo "expected rustc 1.99.1, got: $ver" >&2; exit 1 ;;
+          esac
+          comps="$(rustup component list --installed)"
+          case "$comps" in
+            *llvm-tools*) ;;
+            *) echo "llvm-tools-preview is not installed" >&2; exit 1 ;;
+          esac
+
+      - name: Install cargo-llvm-cov 0.6.17
+        id: llvm_cov
+        if: ${{ !cancelled() && steps.rust.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo install --locked --version 0.6.17 cargo-llvm-cov
+          ver="$(cargo llvm-cov --version)"
+          printf '%s\n' "$ver"
+          case "$ver" in
+            *"cargo-llvm-cov 0.6.17"*) ;;
+            *) echo "expected cargo-llvm-cov 0.6.17, got: $ver" >&2; exit 1 ;;
+          esac
+
+      - name: Measure circus-sandbox line coverage
+        id: coverage
+        if: ${{ !cancelled() && steps.llvm_cov.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo llvm-cov --locked --package circus-sandbox \
+            --lcov --output-path "$RUNNER_TEMP/circus-sandbox-lcov.info" \
+            | tee "$RUNNER_TEMP/circus-sandbox-coverage.txt"
+          {
+            echo "## circus-sandbox coverage"
+            echo
+            echo "Default \`cargo test\` suite only (ignored Docker/containerd/Kubernetes suites excluded)."
+            echo "No coverage percentage gate; this job is display and artifact only."
+            echo
+            echo '```'
+            tail -n 30 "$RUNNER_TEMP/circus-sandbox-coverage.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload lcov artifact
+        if: ${{ !cancelled() && steps.coverage.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: circus-sandbox-lcov
+          path: ${{ runner.temp }}/circus-sandbox-lcov.info
+          if-no-files-found: error
+
+      # README endpoint badge. Only refresh on main so PR runs do not write the
+      # shared badges branch. Display only; not a percentage gate.
+      - name: Publish coverage badge
+        if: ${{ !cancelled() && steps.coverage.outcome == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/scripts/sandbox-publish-coverage-badge.sh \
+            "${RUNNER_TEMP}/circus-sandbox-lcov.info" \
+            coverage.json \
+            coverage
 
   codeql:
     name: codeql

@@ -20,7 +20,7 @@
 - Bug 修复：给出修复前复现与修复后结果，说明回归测试覆盖；无法自动化时说明原因及手动复现方法。
 - UI 变更：交互附录屏，静态变更附前后截图；注明已测平台与未测平台。
 - 纯文档/模板/目录变更：检查格式、路径、链接与命令来源即可，无需启动服务。
-按受影响子项目的真实入口验证；不要默认运行全工作区测试。`circus-sandbox` 当前只有受限临时文件 API（在 `circus-sandbox/` 用 Cargo 构建和测试），没有进程、容器或 Paseo 接入。改到该 crate 时填写实际执行的 Cargo 命令和结果；不要虚构后端、隔离通过或未运行的检查。未改 Rust 时不要填一套没跑过的 Cargo 结果。
+按受影响子项目的真实入口验证；不要默认运行全工作区测试。`circus-sandbox` 当前提供同步 workspace 文件 API、受预算约束的进程内代码快照、资源/显式配置校验及异步 Linux Docker + runc、containerd + runc 与 Kubernetes workload 后端（含工作区文件快照与池租约），没有 Paseo 接入。当前 API、限制与真实后端前提见 `circus-sandbox/README.md`；gVisor/Kata/Firecracker、真正 Kubernetes pause/resume、进程/内存运行时快照、RPC 与 registry 认证不能写成已实现。改到 crate 时填写实际执行的 Cargo 命令和结果；默认忽略的 Docker/containerd/Kubernetes 集成测试须显式连接真实 daemon 或集群，不能用编译或普通测试通过代替隔离证据。未改 Rust 时不要填一套没跑过的 Cargo 结果。
 -->
 
 | 验证项 / 命令（含工作目录或运行环境） | 实际结果 / 证据 |

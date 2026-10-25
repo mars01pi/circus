@@ -1,11 +1,75 @@
-//! Backend-neutral resource request validation.
+//! Backend-neutral resource, isolation, and I/O request configuration.
 //!
 //! A valid [`ResourceLimits`] value is not evidence that resources are enforced,
 //! that execution is isolated, or that aggregate admission across requests has
 //! succeeded. Backend enforcement and admission control are separate concerns;
-//! this module does not start or configure a runtime.
+//! this module does not start or configure a runtime. [`SandboxConfig`] carries
+//! backend-neutral requirements; [`BackendConfig`] selects the backend and
+//! carries its own descriptor.
+
+mod config;
 
 use thiserror::Error;
+
+pub use config::{
+    BackendConfig, BackendConfigError, ConfigError, ContainerdBackendConfig, DockerBackendConfig,
+    IoLimits, IsolationConfig, KubernetesBackendConfig, SandboxConfig,
+};
+
+pub(crate) use config::check_relative;
+
+/// Failure of a privately owned preparation process, independent of its SDK.
+#[derive(Debug, Error)]
+pub enum ProcessError {
+    /// An operating-system operation failed.
+    #[error("process {operation} failed: {source}")]
+    Io {
+        operation: &'static str,
+        #[source]
+        source: std::io::Error,
+    },
+    /// The whole operation exceeded its deadline.
+    #[error("process deadline exceeded")]
+    Timeout,
+    /// The owner requested cancellation.
+    #[error("process cancelled")]
+    Cancelled,
+    /// Combined stdout and stderr exceeded the capture budget.
+    #[error("process output exceeded {limit} bytes")]
+    OutputLimit { limit: usize },
+    /// Termination or resource draining failed. The process owner remains alive.
+    /// Await `cleanup.wait()` before deleting any directory the process can use.
+    #[error("process cleanup failed: {source}")]
+    Cleanup {
+        primary: Option<Box<ProcessError>>,
+        #[source]
+        source: std::io::Error,
+        cleanup: ProcessCleanup,
+    },
+}
+
+/// A retained process owner's completion notification; contains no host paths.
+///
+/// Dropping this handle does not stop cleanup. The private owner retries failures
+/// with a delay, retaining the child identity until termination can be proved.
+#[derive(Clone, Debug)]
+pub struct ProcessCleanup {
+    pub(crate) done: tokio::sync::watch::Receiver<bool>,
+}
+
+impl ProcessCleanup {
+    /// Waits for confirmed process-tree cleanup. This may wait indefinitely if
+    /// the operating system cannot confirm termination; it never reports a
+    /// failed cleanup as success.
+    pub async fn wait(&self) {
+        let mut done = self.done.clone();
+        while !*done.borrow_and_update() {
+            if done.changed().await.is_err() {
+                std::future::pending::<()>().await;
+            }
+        }
+    }
+}
 
 /// A validated, backend-neutral resource request for one sandbox.
 ///

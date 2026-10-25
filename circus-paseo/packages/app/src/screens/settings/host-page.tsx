@@ -65,6 +65,7 @@ import { ICON_SIZE } from "@/styles/theme";
 import type { Theme } from "@/styles/theme";
 import { useProviderIcon } from "@/components/provider-icons";
 import { BrowserToolsOptInCard } from "./browser-tools-card";
+import { SandboxSetupSection } from "@/desktop/sandbox/setup-section";
 import { restartDaemonFromSettings, updateDaemonFromSettings } from "./daemon-lifecycle";
 
 const ThemedRestart = withUnistyles(RotateCw);
@@ -329,6 +330,7 @@ export function HostWorkspacesPage({ serverId }: { serverId: string }) {
 
 export function HostProvidersPage({ serverId }: { serverId: string }) {
   const host = useHostProfile(serverId);
+  const isLocalDaemon = useIsLocalDaemon(serverId);
 
   if (!host) {
     return <HostNotFound />;
@@ -336,6 +338,7 @@ export function HostProvidersPage({ serverId }: { serverId: string }) {
 
   return (
     <View>
+      {isLocalDaemon ? <SandboxSetupSection /> : null}
       <ProvidersSection serverId={serverId} />
     </View>
   );

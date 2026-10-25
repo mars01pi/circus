@@ -48,6 +48,39 @@ Paseo MCP 工具和引导功能不可用。你自己为 `agy` 配置的 MCP 服�
 
 命令和环境变量覆盖见[自定义 Provider](/docs/custom-providers)。
 
+## Sandbox (Codex) {#sandbox-codex}
+
+Circus 的沙箱 Provider 需要显式启用。在 daemon 主机上安装 Circus Rust bridge，并配置 Docker 端点、固定的 Codex 镜像、资源限制和模型渠道。bridge 配置使用显式指定的模型 API 密钥文件；Paseo 不会读取你的 Codex 登录，也不会把主目录、代理设置、MCP 服务器、系统提示词或 Agent 环境变量传给任务。
+
+在 daemon 配置中添加以下条目，并替换其中三个绝对路径：
+
+```json
+{
+  "agents": {
+    "providers": {
+      "sandbox": {
+        "enabled": true,
+        "command": ["/absolute/path/to/circus-stdio-bridge"],
+        "env": {
+          "CIRCUS_RUNNER_CONFIG": "/absolute/path/to/runner.json",
+          "CIRCUS_SANDBOX_STATE_DIR": "/absolute/path/to/state"
+        }
+      }
+    }
+  }
+}
+```
+
+只需提示词的任务可以直接选择 **Sandbox (Codex)**。要提供文件，请打开工作区的 **Sandbox task** 面板。在 Web 或桌面端选择文件，或粘贴文本并指定相对路径；检查文件列表，逐项填写要导出的文件路径，再设置任务期限。浏览器选取只导入所选文件的内容；尚未保存的修改需要显式粘贴才会纳入任务。它不会扫描项目目录。重名文件会被拒绝；嵌套路径可以通过粘贴文件控件或 SDK 的 `options.inputFiles` 提供。
+
+任务时间线显示文本、工具输出，以及导出和清理进度。**Stop** 会等待正在运行的任务返回取消结果。只有确认沙箱清理完成，任务才能成功结束。清理状态为 pending 的结果会提供 **Retry cleanup**。bridge 故障后若清理状态为 unknown，需要在主机上检查该运行器拥有的资源。
+
+导出文件与项目分开保留。在 Web 或桌面端，可以从结果卡片预览和下载；原生客户端可以预览和复制 UTF-8 文本，二进制文件下载目前需要 Web 或桌面端。文件保存在 daemon 的有界内存缓存中（64 MiB，256 个文件），daemon 重启后失效，请在重启前下载。不会自动应用补丁、覆盖项目、提交 Git 或清理工作区。
+
+沙箱会话按顺序执行。每次提示使用全新的沙箱，先从 `CIRCUS_SANDBOX_STATE_DIR` 中的明文工作区归档恢复，再在销毁前捕获到独立的候选归档；只有任务成功且返回可恢复线程后，才替换已提交归档。失败或取消不会替换上次成功检查点。Codex 会恢复上一次已完成轮次返回的原生线程 ID，因此后续提示可以继续使用已完成轮次中的文件与对话；运行中的进程、进行中的 turn 和未沙箱化的宿主状态不会保留，重启后也无法恢复仍在运行的 turn。归档路径由会话 ID 派生，绝不来自提示词或附件，且未加密，只应放在可信宿主状态目录中。持久化记录包含带版本号的 Codex 线程句柄或不可续聊标记；daemon 重启后重新打开可恢复会话时，使用同一会话 ID 和状态目录找到归档。
+
+不支持引导、宿主工具、图片提示词或自动应用补丁。同一时间只允许一个 turn。**Stop** 取消当前 turn 并等待清理；清理状态为 pending 或 unknown 时会阻止下一次提示，直到 **Retry cleanup** 确认完成。没有返回恢复句柄的 Agent（包括 Claude Code）只允许单轮，后续提示和重新打开均明确拒绝。当前实现仅支持 Linux Docker，模型由主机配置选择。providerOptions 的 `workspaceMaxTotalBytes`（默认 64 MiB，最大 512 MiB）和 `workspaceMaxEntries`（默认 65,536，最大 1,000,000）限制每次归档加载与捕获。
+
 ## ACP 目录 {#acp-catalog}
 
 在应用内的 Provider 目录中选择以下任意一个。每个条目都可以一键安装底层 CLI。

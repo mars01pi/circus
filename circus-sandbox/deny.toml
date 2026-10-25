@@ -28,6 +28,16 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     # unicode-ident 1.0.27 is (MIT OR Apache-2.0) AND Unicode-3.0.
     "Unicode-3.0",
+    # matchit 0.8.4 (through axum) is MIT AND BSD-3-Clause; permissive, OSI and
+    # FSF approved, and required by the only selected HTTP framework.
+    "BSD-3-Clause",
+    # foldhash 0.1.5 (through hashbrown in the containerd gRPC stack) is Zlib;
+    # permissive and both OSI and FSF approved.
+    "Zlib",
+    # ring 0.17.14 is (Apache-2.0 AND ISC), rustls-webpki 0.103.16 and
+    # untrusted 0.9.0 are ISC. These come only from the optional `kubernetes`
+    # feature's rustls TLS stack; ISC is permissive and OSI/FSF approved.
+    "ISC",
 ]
 exceptions = []
 

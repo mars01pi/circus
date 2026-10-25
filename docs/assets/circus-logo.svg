@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Circus</title>
+  <desc id="desc">A geometric C surrounds a jade square: a controlled boundary around an agent workspace.</desc>
+  <path d="M187 66H112C77.8 66 50 93.8 50 128s27.8 62 62 62h75" fill="none" stroke="#182E2B" stroke-width="28" stroke-linecap="square"/>
+  <rect x="115" y="111" width="34" height="34" rx="7" fill="#218D76"/>
+  <path d="M181 112h21v32h-21" fill="none" stroke="#218D76" stroke-width="12"/>
+</svg>

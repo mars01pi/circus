@@ -1,7 +1,11 @@
-//! In-memory capture of a [`Workspace`] into a new workspace.
+//! In-memory capture of a [`Workspace`] into a new workspace, and a bounded
+//! durable file format for a caller-supplied host path.
 //!
-//! The snapshot is a process-local value. It is not a process or memory
-//! checkpoint, not a Docker commit, and not durable after this process exits.
+//! A [`CodeSnapshot`] can be written with [`CodeSnapshot::save_file`] and read
+//! back with [`CodeSnapshot::load_file`]. The archive stores regular-file bytes
+//! and directories only. It is not a process or memory checkpoint, not a Docker
+//! commit, not a workspace quota, and not encryption, retention, or tenant
+//! scoping. The caller owns the host path, its storage, and its lifecycle.
 
 use std::io::{self, ErrorKind};
 use std::path::{Component, Path, PathBuf};
@@ -11,14 +15,47 @@ use cap_fs_ext::OpenOptionsSyncExt;
 use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt, OpenOptionsMaybeDirExt};
 use cap_std::fs::{Dir, File, OpenOptions};
 
-use super::{Workspace, WorkspaceError, check_path, lock_poisoned, read_regular};
+use super::{Workspace, WorkspaceError, check_path, lock_poisoned};
 
-/// Why a code-snapshot capture or restore failed.
+mod archive;
+
+/// Why a code-snapshot capture, restore, save, or load failed.
 ///
 /// This is not a workspace quota error. [`SnapshotBudget`] is a bound on one
 /// capture. [`WorkspaceError`] stays the file-operation error.
 #[derive(Debug, thiserror::Error)]
 pub enum SnapshotError {
+    /// Capture metadata contradicted the workspace: an unsupported node,
+    /// malformed manifest, non-portable name, or a payload whose bytes did not
+    /// match its declared size.
+    #[error("invalid workspace capture manifest: {reason}")]
+    InvalidArchive {
+        /// Why the capture was rejected, without exposing backend SDK types.
+        reason: String,
+    },
+
+    /// A transport, manifest, restore, or durable-file limit was zero or
+    /// otherwise outside the supported range.
+    #[error("invalid archive limit")]
+    InvalidArchiveLimit,
+
+    /// A host filesystem operation on a caller-supplied snapshot archive failed.
+    ///
+    /// `operation` names the failed step, such as `open`, `read`, `create
+    /// temporary file`, `write`, `sync`, or `rename`. It never contains the
+    /// host path, and neither does `source`.
+    #[error("snapshot {operation} failed: {source}")]
+    Io {
+        /// Failed step.
+        operation: &'static str,
+        /// Underlying host error.
+        #[source]
+        source: io::Error,
+    },
+
+    /// Snapshot operation was interrupted before staging commit.
+    #[error("snapshot operation interrupted before staging commit")]
+    Interrupted,
     /// `max_total_bytes` or `max_entries` was zero.
     #[error(
         "snapshot budget must be positive, got max_total_bytes={max_total_bytes} max_entries={max_entries}"
@@ -44,10 +81,10 @@ pub enum SnapshotError {
 
     /// File bytes, not path lengths, exceeded the capture byte budget.
     ///
-    /// `actual` is the detected total including the probe byte that did not
-    /// fit; it is not an untrusted metadata file size. A single file still
-    /// fails first with [`WorkspaceError::LimitExceeded`] when its
-    /// per-file cap is tighter.
+    /// `actual` is the detected total: a bounded read's probe byte for direct
+    /// workspace capture, or the running sum of manifest-declared sizes before
+    /// any payload is read. A file fails first with [`WorkspaceError::LimitExceeded`]
+    /// when its per-file cap is tighter.
     #[error("snapshot byte count {actual} exceeds capture budget {limit}")]
     ByteLimit {
         /// Configured total-byte cap.
@@ -109,13 +146,15 @@ impl From<io::Error> for SnapshotError {
     }
 }
 
-/// Caller-supplied bound for one [`Workspace::capture_code_snapshot`].
+/// Caller-supplied bound for one [`Workspace::capture_code_snapshot`],
+/// [`super::CodeSource::copy_to_workspace`], or
+/// [`super::CodeSnapshot::load_file`] operation.
 ///
 /// `max_total_bytes` counts file contents only. `max_entries` counts files and
-/// directories, not the workspace root. Both must be positive. This is an
-/// operation budget that limits memory for that capture. It is not a workspace
-/// total, file-count quota, or host disk quota, and it is not enforced on
-/// later writes. There is still no workspace total-quota API.
+/// directories, not the root. Both must be positive. This operation budget
+/// bounds one capture, copy, or archive load. It is not a workspace total, file-count quota,
+/// or host disk quota, and it is not enforced on later writes. There is still
+/// no workspace total-quota API.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SnapshotBudget {
     max_total_bytes: usize,
@@ -137,12 +176,12 @@ impl SnapshotBudget {
         })
     }
 
-    /// Total file-content bytes this capture may retain.
+    /// Total file-content bytes this capture or copy may retain.
     pub fn max_total_bytes(&self) -> usize {
         self.max_total_bytes
     }
 
-    /// Files plus directories this capture may retain. The root is not counted.
+    /// Files plus directories this operation may retain. The root is not counted.
     pub fn max_entries(&self) -> usize {
         self.max_entries
     }
@@ -150,9 +189,13 @@ impl SnapshotBudget {
 
 /// Owned, immutable copy of regular files and directories.
 ///
-/// Bytes live in this process only. Drop frees that memory; it does not delete
-/// a workspace. The value is not a process or memory checkpoint and does not
-/// imply Docker, container, or pool support. It is not serialized.
+/// Bytes normally live in this process only; [`Self::save_file`] optionally
+/// publishes them to a caller-supplied host path and [`Self::load_file`] reads
+/// that bounded format back. Drop frees memory; it does not delete a workspace
+/// or an archive. The value is not a process or memory checkpoint, not a
+/// quota, and carries no encryption, retention, or tenant scoping. The Docker
+/// backend builds this value from a guest workspace enumeration and per-file
+/// reads.
 ///
 /// [`Self::restore`] creates a new [`Workspace`]. It does not overwrite the
 /// workspace that was captured.
@@ -184,10 +227,68 @@ enum Body {
     File(Vec<u8>),
 }
 
+/// One backend-neutral node supplied to [`CodeSnapshot::from_entries`].
+///
+/// Paths are workspace-relative and were already validated by the caller.
+pub(crate) struct SnapshotEntry {
+    pub path: PathBuf,
+    pub body: SnapshotBody,
+}
+
+/// Payload of one [`SnapshotEntry`]. Directories carry no payload.
+pub(crate) enum SnapshotBody {
+    Directory,
+    File(Vec<u8>),
+}
+
 impl CodeSnapshot {
+    /// Builds a snapshot from an already-enumerated, already-budget-checked
+    /// workspace tree.
+    ///
+    /// Entries are stored in the supplied order, which is the sort order of the
+    /// capture manifest. `max_file_bytes` is copied into the snapshot and every
+    /// payload is re-checked against it, so a caller cannot install a snapshot
+    /// that the captured workspace's own file bound would reject. Total bytes
+    /// and entry count are derived from the supplied entries; the root is not
+    /// an entry.
+    pub(crate) fn from_entries(
+        max_file_bytes: usize,
+        entries: Vec<SnapshotEntry>,
+    ) -> Result<Self, SnapshotError> {
+        let mut total_bytes = 0usize;
+        let mut stored = Vec::new();
+        stored.try_reserve(entries.len()).map_err(reserve_error)?;
+        for SnapshotEntry { path, body } in entries {
+            let body = match body {
+                SnapshotBody::Directory => Body::Dir,
+                SnapshotBody::File(bytes) => {
+                    if bytes.len() > max_file_bytes {
+                        return Err(SnapshotError::Workspace(WorkspaceError::LimitExceeded {
+                            limit: max_file_bytes,
+                            actual: bytes.len(),
+                        }));
+                    }
+                    let Some(total) = total_bytes.checked_add(bytes.len()) else {
+                        return Err(SnapshotError::InvalidArchive {
+                            reason: "snapshot byte total overflowed".to_string(),
+                        });
+                    };
+                    total_bytes = total;
+                    Body::File(bytes)
+                }
+            };
+            stored.push(Entry { path, body });
+        }
+        Ok(Self {
+            max_file_bytes,
+            total_bytes,
+            entries: stored,
+        })
+    }
+
     /// Per-file cap copied from the captured workspace.
     ///
-    /// Restore uses this same cap. It is not the capture byte budget.
+    /// [`Self::restore`] uses this cap; Docker restoration uses target limits.
     pub fn max_file_bytes(&self) -> usize {
         self.max_file_bytes
     }
@@ -213,6 +314,42 @@ impl CodeSnapshot {
     /// Blocks the calling thread.
     pub fn restore(&self) -> Result<Workspace, SnapshotError> {
         self.restore_with_file_cap(self.max_file_bytes)
+    }
+    pub(crate) fn restore_with_limits(
+        &self,
+        max_file_bytes: usize,
+        max_total_bytes: usize,
+    ) -> Result<Workspace, SnapshotError> {
+        if max_file_bytes == 0 || max_file_bytes == usize::MAX {
+            return Err(SnapshotError::InvalidArchiveLimit);
+        }
+        if max_total_bytes == 0 {
+            return Err(SnapshotError::InvalidArchiveLimit);
+        }
+        let mut total = 0usize;
+        for entry in &self.entries {
+            if let Body::File(bytes) = &entry.body {
+                if bytes.len() > max_file_bytes {
+                    return Err(SnapshotError::Workspace(WorkspaceError::LimitExceeded {
+                        limit: max_file_bytes,
+                        actual: bytes.len(),
+                    }));
+                }
+                total = total
+                    .checked_add(bytes.len())
+                    .ok_or_else(|| SnapshotError::ByteLimit {
+                        limit: max_total_bytes,
+                        actual: usize::MAX,
+                    })?;
+                if total > max_total_bytes {
+                    return Err(SnapshotError::ByteLimit {
+                        limit: max_total_bytes,
+                        actual: total,
+                    });
+                }
+            }
+        }
+        self.restore_with_file_cap(max_file_bytes)
     }
 
     pub(crate) fn restore_with_file_cap(
@@ -263,17 +400,18 @@ impl Workspace {
     ///
     /// The exclusive file lock is taken after the closed check and held for the
     /// whole walk, so this does not interleave with writes on this value. The
-    /// walk uses the cap-std directory handle. It does not follow symlinks, does
-    /// not open non-regular nodes, and does not extract an archive. A symlink,
-    /// FIFO, device, socket, unknown node, or non-portable name fails the
-    /// capture; nothing is returned.
+    /// walk uses the cap-std directory handle. It does not follow symlinks and
+    /// does not open non-regular nodes. A symlink, FIFO, device, socket,
+    /// unknown node, or non-portable name fails the capture; nothing is
+    /// returned.
     ///
     /// Each relative path, and each of its components, uses the same rejection
     /// rules as [`Self::write_file`]. `max_file_bytes` still caps each file.
     /// `budget` caps this call's retained bytes and entry count only.
     ///
-    /// Does not modify this workspace. Blocks the calling thread. Not a process
-    /// checkpoint and not Docker support.
+    /// Does not modify this workspace. Blocks the calling thread. Docker's
+    /// separate async snapshot API enumerates a running workspace through the
+    /// guest and reads each file individually.
     pub fn capture_code_snapshot(
         &self,
         budget: SnapshotBudget,
@@ -382,12 +520,12 @@ fn capture_frame(
     Ok(())
 }
 
-enum Kind {
+pub(super) enum Kind {
     Dir,
     File,
 }
 
-fn child_path(prefix: &Path, name: &std::ffi::OsStr) -> Result<PathBuf, SnapshotError> {
+pub(super) fn child_path(prefix: &Path, name: &std::ffi::OsStr) -> Result<PathBuf, SnapshotError> {
     let name_path = Path::new(name);
     require_portable_component(name_path)?;
     let rel = append_component(prefix, name);
@@ -443,7 +581,7 @@ fn require_portable_component(path: &Path) -> Result<(), SnapshotError> {
     }
 }
 
-fn node_kind(dir: &Dir, name: &Path, rel: &Path) -> Result<Kind, SnapshotError> {
+pub(super) fn node_kind(dir: &Dir, name: &Path, rel: &Path) -> Result<Kind, SnapshotError> {
     let meta = dir.symlink_metadata(name)?;
     let file_type = meta.file_type();
     if file_type.is_symlink() {
@@ -477,12 +615,33 @@ pub(super) fn open_child_dir(parent: &Dir, name: &Path, rel: &Path) -> Result<Di
     Ok(Dir::from_std_file(file.into_std()))
 }
 
-fn read_capped(
+pub(super) fn read_capped(
     parent: &Dir,
     name: &Path,
     rel: &Path,
     limit: usize,
 ) -> Result<Vec<u8>, SnapshotError> {
+    let mut bytes = Vec::new();
+    read_capped_into(parent, name, rel, limit, &mut bytes)?;
+    Ok(bytes)
+}
+
+pub(super) fn read_capped_into(
+    parent: &Dir,
+    name: &Path,
+    rel: &Path,
+    limit: usize,
+    bytes: &mut Vec<u8>,
+) -> Result<(), SnapshotError> {
+    let file = open_regular(parent, name, rel)?;
+    match super::read_regular_into(file, rel, limit, bytes) {
+        Ok(()) => Ok(()),
+        Err(WorkspaceError::NotRegularFile { path }) => Err(SnapshotError::NotRegular { path }),
+        Err(err) => Err(err.into()),
+    }
+}
+
+pub(super) fn open_regular(parent: &Dir, name: &Path, rel: &Path) -> Result<File, SnapshotError> {
     let mut options = OpenOptions::new();
     options.read(true);
     options.follow(FollowSymlinks::No);
@@ -495,11 +654,7 @@ fn read_capped(
         Err(err) => return Err(classify_failed_open(parent, name, rel, err)),
     };
     refuse_unwanted_handle(&file, rel, false)?;
-    match read_regular(file, rel, limit) {
-        Ok(bytes) => Ok(bytes),
-        Err(WorkspaceError::NotRegularFile { path }) => Err(SnapshotError::NotRegular { path }),
-        Err(err) => Err(err.into()),
-    }
+    Ok(file)
 }
 
 fn refuse_unwanted_handle(file: &File, rel: &Path, want_dir: bool) -> Result<(), SnapshotError> {

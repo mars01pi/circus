@@ -1,0 +1,133 @@
+name: Sandbox Kubernetes
+
+# Real Kubernetes workload evidence for the opt-in Kubernetes integration
+# suites. k3s is installed on the runner and the test image is pre-pulled with
+# `k3s ctr`, so the suites perform no registry authentication. The suites cover
+# Pod lifecycle/exec/files, workspace snapshots, and pool leases. This workflow
+# complements (does not replace) the Docker and containerd jobs. Absence,
+# cancellation, or failure of this workflow is never a green claim about Pod
+# isolation or pause/resume.
+#
+# No path filters: circus-sandbox is the whole crate, and a skipped workflow
+# stays pending when a ruleset requires the check.
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: sandbox-kubernetes-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # The suites assert this opt-in explicitly; they never connect without it.
+  CIRCUS_KUBERNETES: "1"
+  CIRCUS_KUBERNETES_NAMESPACE: default
+  CIRCUS_KUBERNETES_IMAGE: docker.io/library/python:3.12-slim
+
+jobs:
+  kubernetes:
+    name: Kubernetes workload (k3s)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: circus-sandbox
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust 1.99.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+            https://sh.rustup.rs -o "$RUNNER_TEMP/rustup-init.sh"
+          sh "$RUNNER_TEMP/rustup-init.sh" -y \
+            --default-toolchain 1.99.1 \
+            --profile minimal \
+            --component rustfmt,clippy
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Require Rust 1.99.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="$(rustc --version)"
+          printf '%s\n' "$ver"
+          cargo --version
+          case "$ver" in
+            *" 1.99.1 "*) ;;
+            *) echo "expected rustc 1.99.1, got: $ver" >&2; exit 1 ;;
+          esac
+
+      - name: Install k3s
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+            https://get.k3s.io -o "$RUNNER_TEMP/k3s-install.sh"
+          sudo sh "$RUNNER_TEMP/k3s-install.sh" --disable=traefik --write-kubeconfig-mode=644
+
+      - name: Wait for node Ready
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The API answers before the node object is registered; wait for it
+          # to appear first, then for Ready.
+          for _ in $(seq 1 60); do
+            if sudo k3s kubectl get nodes -o name 2>/dev/null | grep -q node; then break; fi
+            sleep 5
+          done
+          sudo k3s kubectl wait --for=condition=Ready node --all --timeout=300s
+          sudo k3s kubectl get nodes -o wide
+          sudo k3s --version
+
+      - name: Export kubeconfig
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo install -m 0644 /etc/rancher/k3s/k3s.yaml "$RUNNER_TEMP/kubeconfig"
+          sudo chown "$(id -u):$(id -g)" "$RUNNER_TEMP/kubeconfig"
+          echo "CIRCUS_KUBERNETES_KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
+          kubectl --kubeconfig "$RUNNER_TEMP/kubeconfig" get --raw=/version
+
+      - name: Pre-pull test image through k3s containerd
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo k3s ctr -n k8s.io images pull "$CIRCUS_KUBERNETES_IMAGE"
+          sudo k3s ctr -n k8s.io images list | grep -F python
+
+      - name: Print Kubernetes and image digests
+        shell: bash
+        run: |
+          set -euo pipefail
+          kubectl --kubeconfig "$CIRCUS_KUBERNETES_KUBECONFIG" version
+          kubectl --kubeconfig "$CIRCUS_KUBERNETES_KUBECONFIG" get nodes -o wide
+
+      - name: Run ignored Kubernetes workload suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --features kubernetes --test kubernetes_workload -- \
+            --ignored --test-threads=1
+
+      - name: Run ignored Kubernetes workspace snapshot suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --features kubernetes --test kubernetes_snapshot -- \
+            --ignored --test-threads=1
+
+      - name: Run ignored Kubernetes pool suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --features kubernetes --test kubernetes_pool -- \
+            --ignored --test-threads=1

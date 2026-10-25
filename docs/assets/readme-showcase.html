@@ -1,0 +1,733 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Circus README visuals</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family:
+          Inter,
+          ui-sans-serif,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          "PingFang SC",
+          "Hiragino Sans GB",
+          "Microsoft YaHei",
+          sans-serif;
+        --ink: #17211f;
+        --muted: #687471;
+        --line: #d8dfdc;
+        --paper: #f2f5f3;
+        --surface: #ffffff;
+        --green: #218d76;
+        --green-soft: #dcece6;
+        --rust: #d66b35;
+        --rust-soft: #f6e4da;
+        --blue: #296ca8;
+        --blue-soft: #e6f0f8;
+        --dark: #111917;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-width: 1920px;
+        background: #cdd4d1;
+        color: var(--ink);
+      }
+
+      body {
+        padding: 48px 0;
+      }
+
+      .showcase {
+        position: relative;
+        width: 1920px;
+        margin: 0 auto 48px;
+        overflow: hidden;
+        background: var(--paper);
+      }
+
+      .eyebrow {
+        color: var(--green);
+        font-size: 22px;
+        font-weight: 750;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      #desktop-overview {
+        height: 1200px;
+      }
+
+      .overview-header {
+        position: absolute;
+        top: 52px;
+        left: 64px;
+        right: 64px;
+        display: grid;
+        grid-template-columns: 84px 1fr auto;
+        align-items: center;
+        gap: 24px;
+      }
+
+      .overview-header .logo {
+        width: 72px;
+        height: 72px;
+      }
+
+      .overview-title h1 {
+        margin-top: 8px;
+        font-size: 54px;
+        line-height: 1.08;
+        font-weight: 780;
+        letter-spacing: 0;
+      }
+
+      .overview-title p {
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 24px;
+        line-height: 1.45;
+      }
+
+      .overview-chips {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .chip {
+        display: inline-flex;
+        min-height: 36px;
+        align-items: center;
+        gap: 7px;
+        padding: 0 11px;
+        border: 1px solid #c9d4d0;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.8);
+        color: #34413e;
+        font-size: 15px;
+        font-weight: 650;
+        white-space: nowrap;
+      }
+
+      .chip-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--green);
+      }
+
+      .chip.rust {
+        border-color: #d8ad97;
+        background: #fff9f5;
+        color: #7a3517;
+      }
+
+      .chip.rust .chip-dot {
+        background: var(--rust);
+      }
+
+      .product-window {
+        position: absolute;
+        top: 262px;
+        left: 64px;
+        width: 1344px;
+        overflow: hidden;
+        border: 1px solid #cbd4d1;
+        border-radius: 8px;
+        background: var(--surface);
+        box-shadow: 0 24px 70px rgba(22, 38, 33, 0.16);
+      }
+
+      .window-bar {
+        display: flex;
+        height: 38px;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 15px;
+        border-bottom: 1px solid #e3e7e5;
+        background: #fafbfa;
+      }
+
+      .window-dots {
+        display: flex;
+        gap: 8px;
+      }
+
+      .window-dots i {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #c6ccca;
+      }
+
+      .window-dots i:first-child {
+        background: #e27665;
+      }
+
+      .window-dots i:nth-child(2) {
+        background: #e4b95e;
+      }
+
+      .window-dots i:last-child {
+        background: #63a876;
+      }
+
+      .window-label {
+        color: #707b78;
+        font-size: 15px;
+        font-weight: 650;
+      }
+
+      .product-window > img {
+        display: block;
+        width: 1344px;
+        height: 896px;
+      }
+
+      .boundary-panel {
+        position: absolute;
+        top: 262px;
+        right: 64px;
+        width: 416px;
+        height: 934px;
+        padding: 40px 34px;
+        border-radius: 8px;
+        background: var(--dark);
+        color: #f4f7f5;
+      }
+
+      .boundary-panel .eyebrow {
+        color: #ef9b70;
+      }
+
+      .boundary-panel h2 {
+        margin-top: 12px;
+        font-size: 34px;
+        line-height: 1.18;
+        font-weight: 740;
+      }
+
+      .boundary-panel > p {
+        margin-top: 16px;
+        color: #aeb9b5;
+        font-size: 18px;
+        line-height: 1.55;
+      }
+
+      .boundary-list {
+        margin-top: 34px;
+        border-top: 1px solid #34423e;
+      }
+
+      .boundary-item {
+        display: grid;
+        grid-template-columns: 34px 1fr;
+        gap: 13px;
+        padding: 25px 0;
+        border-bottom: 1px solid #34423e;
+      }
+
+      .boundary-number {
+        display: flex;
+        width: 30px;
+        height: 30px;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid #8c573c;
+        border-radius: 50%;
+        color: #f3b08d;
+        font-size: 14px;
+        font-weight: 750;
+      }
+
+      .boundary-item h3 {
+        font-size: 20px;
+        line-height: 1.25;
+        font-weight: 700;
+      }
+
+      .boundary-item p {
+        margin-top: 7px;
+        color: #aeb9b5;
+        font-size: 16px;
+        line-height: 1.48;
+      }
+
+      .boundary-footer {
+        position: absolute;
+        right: 34px;
+        bottom: 32px;
+        left: 34px;
+        display: block;
+        color: #81908b;
+        font-size: 12px;
+        font-weight: 700;
+        text-align: center;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+
+      .boundary-footer strong {
+        color: #ef9b70;
+        font-size: 13px;
+      }
+
+      #security-flow {
+        height: 1040px;
+        background: #f7f9f8;
+      }
+
+      .flow-header {
+        position: absolute;
+        top: 58px;
+        left: 64px;
+        right: 64px;
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 48px;
+      }
+
+      .flow-header h2 {
+        margin-top: 9px;
+        font-size: 46px;
+        line-height: 1.12;
+        font-weight: 770;
+      }
+
+      .flow-header p {
+        max-width: 740px;
+        padding-bottom: 4px;
+        color: var(--muted);
+        font-size: 21px;
+        line-height: 1.5;
+        text-align: right;
+      }
+
+      .flow-grid {
+        position: absolute;
+        top: 210px;
+        left: 64px;
+        right: 64px;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 34px;
+      }
+
+      .flow-step {
+        min-width: 0;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+
+      .visual-crop {
+        position: relative;
+        height: 410px;
+        overflow: hidden;
+        border-bottom: 1px solid var(--line);
+        background: #edf1ef;
+      }
+
+      .visual-crop img {
+        position: absolute;
+        display: block;
+        max-width: none;
+      }
+
+      .setup-crop img {
+        top: -88px;
+        left: -148px;
+        width: 784px;
+        height: 700px;
+      }
+
+      .permission-pair {
+        display: grid;
+        height: 410px;
+        grid-template-rows: 1fr 1fr;
+        gap: 1px;
+        background: var(--line);
+      }
+
+      .permission-crop {
+        position: relative;
+        min-height: 0;
+        overflow: hidden;
+        background: #f7f8f7;
+      }
+
+      .permission-crop .permission-tool {
+        position: absolute;
+        top: -480px;
+        left: -255px;
+        width: 1200px;
+        height: 800px;
+        max-width: none;
+      }
+
+      .toggle-cut {
+        position: absolute;
+        z-index: 2;
+        top: 110px;
+        right: 14px;
+        width: 88px;
+        height: 80px;
+        overflow: hidden;
+        background: #fff;
+        box-shadow: -18px 0 18px #fff;
+      }
+
+      .toggle-cut img {
+        position: absolute;
+        top: -590px;
+        left: -1093px;
+        width: 1200px;
+        height: 800px;
+        max-width: none;
+      }
+
+      .state-label {
+        position: absolute;
+        z-index: 2;
+        top: 16px;
+        left: 16px;
+        min-width: 112px;
+        padding: 8px 12px;
+        border: 1px solid #cfd8d5;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.94);
+        color: #41504c;
+        font-size: 15px;
+        font-weight: 700;
+        text-align: center;
+      }
+
+      .state-label.allowed {
+        border-color: #93c8b8;
+        background: rgba(225, 243, 237, 0.96);
+        color: #176b58;
+      }
+
+      .result-crop {
+        display: flex;
+        height: 410px;
+        align-items: center;
+        justify-content: center;
+        padding: 30px;
+        background: #eef3f1;
+      }
+
+      .result-frame {
+        width: 100%;
+        overflow: hidden;
+        border: 1px solid #d5ddda;
+        border-radius: 8px;
+        background: #fff;
+        box-shadow: 0 14px 34px rgba(31, 50, 44, 0.12);
+      }
+
+      .result-frame .window-bar {
+        height: 34px;
+      }
+
+      .result-frame > img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
+      .step-copy {
+        min-height: 214px;
+        padding: 25px 28px 28px;
+      }
+
+      .step-index {
+        color: var(--green);
+        font-size: 15px;
+        font-weight: 780;
+        text-transform: uppercase;
+      }
+
+      .step-copy h3 {
+        margin-top: 10px;
+        font-size: 27px;
+        line-height: 1.25;
+        font-weight: 740;
+      }
+
+      .step-copy p {
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 18px;
+        line-height: 1.52;
+      }
+
+      .trust-strip {
+        position: absolute;
+        right: 64px;
+        bottom: 50px;
+        left: 64px;
+        display: grid;
+        min-height: 112px;
+        grid-template-columns: 1fr 48px 1.25fr 48px 1.15fr 48px 1fr;
+        align-items: stretch;
+        border: 1px solid #cdd8d4;
+        border-radius: 8px;
+        background: var(--dark);
+        color: #f2f6f4;
+      }
+
+      .trust-node {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 13px;
+        padding: 18px 20px;
+      }
+
+      .trust-node strong {
+        flex: 0 0 auto;
+        color: #8ed1be;
+        font-size: 16px;
+        text-transform: uppercase;
+      }
+
+      .trust-node span {
+        color: #c5cecb;
+        font-size: 16px;
+        line-height: 1.4;
+      }
+
+      .trust-node.rust {
+        background: #23150f;
+      }
+
+      .trust-node.rust strong {
+        color: #ef9b70;
+      }
+
+      .trust-node.runtime strong {
+        color: #fda4af;
+      }
+
+      .trust-arrow {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-right: 1px solid #34423e;
+        border-left: 1px solid #34423e;
+        color: #76c2ae;
+        font-size: 27px;
+      }
+    </style>
+  </head>
+  <body>
+    <section
+      id="desktop-overview"
+      class="showcase"
+      aria-label="Circus desktop overview"
+    >
+      <header class="overview-header">
+        <img class="logo" src="circus-logo.svg" alt="" />
+        <div class="overview-title">
+          <div class="eyebrow">Paseo UX / Circus Rust control plane</div>
+          <h1>把 Agent 放进边界里</h1>
+          <p>
+            桌面选择边界，Rust 控制面拥有任务生命周期，宿主代理连接服务，Docker
+            + runc 执行隔离。
+          </p>
+        </div>
+        <div class="overview-chips" aria-hidden="true">
+          <span class="chip rust"
+            ><i class="chip-dot"></i>Rust · lifecycle core</span
+          >
+          <span class="chip"><i class="chip-dot"></i>Codex · macOS setup</span>
+          <span class="chip"><i class="chip-dot"></i>Claude · host config</span>
+          <span class="chip"><i class="chip-dot"></i>MCP · scoped HTTPS</span>
+        </div>
+      </header>
+
+      <div class="product-window">
+        <div class="window-bar">
+          <span class="window-dots"><i></i><i></i><i></i></span>
+          <span class="window-label">Paseo · Sandbox task</span>
+          <span></span>
+        </div>
+        <img src="sandbox-tools-granted.png" alt="" />
+      </div>
+
+      <aside class="boundary-panel">
+        <div class="eyebrow">Rust-owned task lifecycle</div>
+        <h2>边界不是提示词，是执行约束</h2>
+        <p>
+          Rust
+          控制面将有界输入、显式授权、后端策略与清理结果连成当前桌面任务的执行约束。
+        </p>
+        <div class="boundary-list">
+          <div class="boundary-item">
+            <span class="boundary-number">01</span>
+            <div>
+              <h3>有界输入</h3>
+              <p>路径、帧、文件与产物超限即拒绝。</p>
+            </div>
+          </div>
+          <div class="boundary-item">
+            <span class="boundary-number">02</span>
+            <div>
+              <h3>任务授权</h3>
+              <p>只接受已配置连接与显式 MCP grant。</p>
+            </div>
+          </div>
+          <div class="boundary-item">
+            <span class="boundary-number">03</span>
+            <div>
+              <h3>生效校验</h3>
+              <p>创建后 inspect；策略缺项或不符即拒绝。</p>
+            </div>
+          </div>
+          <div class="boundary-item">
+            <span class="boundary-number">04</span>
+            <div>
+              <h3>清理所有权</h3>
+              <p>取消、超时和输出拥塞都不转移回收责任。</p>
+            </div>
+          </div>
+        </div>
+        <div class="boundary-footer">
+          <span
+            >Paseo UX → <strong>Rust control plane</strong> → Docker +
+            runc</span
+          >
+        </div>
+      </aside>
+    </section>
+
+    <section
+      id="security-flow"
+      class="showcase"
+      aria-label="Circus security workflow"
+    >
+      <header class="flow-header">
+        <div>
+          <div class="eyebrow">Rust-owned task lifecycle</div>
+          <h2>一条任务链，三次明确交接</h2>
+        </div>
+        <p>
+          宿主保管凭据，Rust 固化任务约束，Docker + runc
+          执行，最终返回产物与清理状态。
+        </p>
+      </header>
+
+      <div class="flow-grid">
+        <article class="flow-step">
+          <div class="visual-crop setup-crop">
+            <img src="sandbox-setup.png" alt="" />
+          </div>
+          <div class="step-copy">
+            <div class="step-index">01 / Host credentials</div>
+            <h3>真实凭据不进入沙箱</h3>
+            <p>Keychain 保存模型与 MCP 凭据；宿主连接器代为完成认证。</p>
+          </div>
+        </article>
+
+        <article class="flow-step">
+          <div class="permission-pair">
+            <div class="permission-crop">
+              <span class="state-label">Default off</span>
+              <img
+                class="permission-tool"
+                src="sandbox-tools-default.png"
+                alt=""
+              />
+              <span class="toggle-cut"
+                ><img src="sandbox-tools-default.png" alt=""
+              /></span>
+            </div>
+            <div class="permission-crop">
+              <span class="state-label allowed">Explicit grant</span>
+              <img
+                class="permission-tool"
+                src="sandbox-tools-granted.png"
+                alt=""
+              />
+              <span class="toggle-cut"
+                ><img src="sandbox-tools-granted.png" alt=""
+              /></span>
+            </div>
+          </div>
+          <div class="step-copy">
+            <div class="step-index">02 / Rust task policy</div>
+            <h3>工具默认不授权</h3>
+            <p>
+              Rust 运行器只接受已配置连接和显式 grant；仓库等固定参数由宿主
+              broker 注入，Agent 不能覆盖。
+            </p>
+          </div>
+        </article>
+
+        <article class="flow-step">
+          <div class="result-crop">
+            <div class="result-frame">
+              <div class="window-bar">
+                <span class="window-dots"><i></i><i></i><i></i></span>
+                <span class="window-label">Task result</span>
+                <span></span>
+              </div>
+              <img src="paseo-task-result.png" alt="" />
+            </div>
+          </div>
+          <div class="step-copy">
+            <div class="step-index">03 / Rust outcome contract</div>
+            <h3>成功包含清理确认</h3>
+            <p>
+              Rust
+              运行器只有在产物读取完成且沙箱销毁成功后才发布成功；未确认清理不会显示为
+              confirmed。
+            </p>
+          </div>
+        </article>
+      </div>
+
+      <div class="trust-strip" aria-hidden="true">
+        <div class="trust-node">
+          <strong>Host task</strong>
+          <span>selected inputs + grants</span>
+        </div>
+        <div class="trust-arrow">→</div>
+        <div class="trust-node rust">
+          <strong>Rust control</strong>
+          <span>limits + grants + lifecycle</span>
+        </div>
+        <div class="trust-arrow">→</div>
+        <div class="trust-node runtime">
+          <strong>Docker + runc</strong>
+          <span>network=none + non-root + read-only root</span>
+        </div>
+        <div class="trust-arrow">→</div>
+        <div class="trust-node">
+          <strong>Host result</strong>
+          <span>artifacts + cleanup state</span>
+        </div>
+      </div>
+    </section>
+  </body>
+</html>

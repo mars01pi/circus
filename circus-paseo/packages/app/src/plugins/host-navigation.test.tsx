@@ -36,6 +36,23 @@ describe("usePluginHostNavigation", () => {
     });
   });
 
+  it("forwards a workspace fallback for a newly created agent", () => {
+    const { result } = renderHook(() => usePluginHostNavigation("host-1"));
+
+    act(() =>
+      result.current.openAgent({
+        agentId: "agent-1",
+        workspaceId: "workspace-1",
+      }),
+    );
+
+    expect(navigateToAgentMock).toHaveBeenCalledWith({
+      serverId: "host-1",
+      agentId: "agent-1",
+      workspaceId: "workspace-1",
+    });
+  });
+
   it("keeps the capability stable until the rendering host changes", () => {
     const { result, rerender } = renderHook(({ serverId }) => usePluginHostNavigation(serverId), {
       initialProps: { serverId: "host-1" },

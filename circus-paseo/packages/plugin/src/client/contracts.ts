@@ -42,7 +42,12 @@ interface PluginNavigableHostProps extends PluginHostProps {
       readonly workspaceId: string;
       readonly serverId?: string;
     }) => void;
-    readonly openAgent: (input: { readonly agentId: string; readonly serverId?: string }) => void;
+    /** `workspaceId` lets hosts open a just-created agent before its list update arrives. */
+    readonly openAgent: (input: {
+      readonly agentId: string;
+      readonly serverId?: string;
+      readonly workspaceId?: string;
+    }) => void;
     readonly openWorkspace: (input: {
       readonly workspaceId: string;
       readonly serverId?: string;

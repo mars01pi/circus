@@ -4,6 +4,21 @@ use std::path::Path;
 use super::{SnapshotBudget, SnapshotError, Workspace};
 
 #[test]
+fn zero_budget_and_file_cap_are_rejected() {
+    assert!(matches!(
+        Workspace::new(0),
+        Err(super::super::WorkspaceError::InvalidLimit { max_file_bytes: 0 })
+    ));
+    assert!(matches!(
+        SnapshotBudget::new(0, 1),
+        Err(SnapshotError::InvalidBudget {
+            max_total_bytes: 0,
+            ..
+        })
+    ));
+}
+
+#[test]
 fn capture_refuses_symlinks_without_following_them() {
     let mut workspace = Workspace::new(32).unwrap();
     workspace.write_file("target", b"secret").unwrap();
@@ -83,7 +98,10 @@ fn failed_restore_surfaces_cleanup_failure() {
     drop(held);
     let mut destination = *destination;
     destination.cleanup().unwrap();
-    assert!(destination.temp.is_none());
+    assert!(matches!(
+        destination.read_file("held"),
+        Err(super::WorkspaceError::Closed)
+    ));
 }
 
 #[cfg(unix)]

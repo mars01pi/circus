@@ -1,0 +1,1 @@
+{ "id": "sandbox-provider", "requirements": { "paseo": ">=0.13.0-beta.2" } }

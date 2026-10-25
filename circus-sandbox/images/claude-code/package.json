@@ -1,0 +1,9 @@
+{
+  "name": "circus-claude-code-image",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Pinned Claude Code CLI for the Circus Docker image.",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.310"
+  }
+}
